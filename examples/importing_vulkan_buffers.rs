@@ -215,8 +215,7 @@ fn main() {
     // the look ahead depth.
     let num_bufs = usize::try_from(preset_config.presetCfg.frameIntervalP)
         .expect("frame intervalP should always be positive.")
-        + usize::try_from(preset_config.presetCfg.rcParams.lookaheadDepth)
-            .expect("lookahead depth should always be positive.");
+        + usize::from(preset_config.presetCfg.rcParams.lookaheadDepth);
 
     let mut output_buffers: Vec<_> = (0..num_bufs)
         .map(|_| {

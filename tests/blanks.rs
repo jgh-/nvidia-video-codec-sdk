@@ -29,12 +29,13 @@ fn encode_blanks<P: AsRef<Path>>(
     const BUFFER_FORMAT: NV_ENC_BUFFER_FORMAT = NV_ENC_BUFFER_FORMAT::NV_ENC_BUFFER_FORMAT_ARGB;
     const ENCODE_GUID: GUID = NV_ENC_CODEC_H264_GUID;
     // The size should be adjusted depending on the buffer format and pitch/stride.
-    #[allow(clippy::large_stack_arrays)]
+    #[allow(clippy::large_stack_arrays, clippy::large_const_arrays)]
     const FRAME: [u8; (WIDTH * HEIGHT * 4) as usize] = [255; (WIDTH * HEIGHT * 4) as usize];
 
     let mut output = file_path.map(|path| {
         OpenOptions::new()
             .create(true)
+            .truncate(true)
             .write(true)
             .open(path)
             .expect("Path should be valid.")
