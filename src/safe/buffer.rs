@@ -280,6 +280,19 @@ pub struct Buffer<'a> {
 unsafe impl Send for Buffer<'_> {}
 
 impl<'a> Buffer<'a> {
+    /// Pitch this wrapper passes to the encoder as
+    /// `NV_ENC_PIC_PARAMS::inputPitch`.
+    ///
+    /// For buffers allocated through the API this is the frame width, not the
+    /// driver's allocation stride. The driver may allocate a larger stride
+    /// (measured: 834x480 NV12 gets a 896-byte stride) and reads rows at that
+    /// stride regardless of this value, so callers that write rows must pad to
+    /// [`BufferLock::pitch`] instead.
+    #[must_use]
+    pub fn pitch(&self) -> u32 {
+        self.pitch
+    }
+
     /// Lock the input buffer.
     ///
     /// On a successful lock you get a [`BufferLock`] which can be used to write
@@ -415,11 +428,21 @@ impl EncoderInput for Buffer<'_> {
 pub struct BufferLock<'a, 'b> {
     buffer: &'a Buffer<'b>,
     data_ptr: *mut c_void,
-    #[allow(dead_code)]
     pitch: u32,
 }
 
 impl BufferLock<'_, '_> {
+    /// Allocation stride of the locked buffer, in bytes, as reported by
+    /// `nvEncLockInputBuffer`.
+    ///
+    /// [`BufferLock::write`] copies data contiguously, so callers writing a
+    /// frame row by row must pad every row to this stride. It can be larger
+    /// than the frame width.
+    #[must_use]
+    pub fn pitch(&self) -> u32 {
+        self.pitch
+    }
+
     /// Write data to the buffer.
     ///
     /// # Safety

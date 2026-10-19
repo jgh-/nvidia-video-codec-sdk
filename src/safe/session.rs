@@ -192,6 +192,7 @@ impl Session {
             bufferFmt: self.buffer_format,
             pictureStruct: NV_ENC_PIC_STRUCT::NV_ENC_PIC_STRUCT_FRAME,
             inputTimeStamp: params.input_timestamp,
+            encodePicFlags: params.encode_pic_flags,
             codecPicParams: params.codec_params.map(Into::into).unwrap_or_default(),
             pictureType: params.picture_type,
             ..Default::default()
@@ -234,6 +235,14 @@ impl Drop for Session {
 pub struct EncodePictureParams {
     /// Opaque data used for identifying the corresponding encoded frame
     pub input_timestamp: u64,
+    /// Flags from [`NV_ENC_PIC_FLAGS`](crate::sys::nvEncodeAPI::NV_ENC_PIC_FLAGS).
+    ///
+    /// The one that matters in practice is `NV_ENC_PIC_FLAG_FORCEIDR`, which is
+    /// the **only** way to request an IDR while picture-type decision is
+    /// enabled. A driver-scheduled GOP boundary (`gopLength`) may produce an
+    /// intra-only frame, which is not a random-access point in AV1/ISOBMFF;
+    /// forced IDRs are.
+    pub encode_pic_flags: u32,
     /// The picture type to use, if picture type decision is disabled in the
     /// encoder
     pub picture_type: NV_ENC_PIC_TYPE,
@@ -245,6 +254,7 @@ impl Default for EncodePictureParams {
     fn default() -> Self {
         Self {
             input_timestamp: 0,
+            encode_pic_flags: 0,
             picture_type: NV_ENC_PIC_TYPE::NV_ENC_PIC_TYPE_UNKNOWN,
             codec_params: None,
         }
