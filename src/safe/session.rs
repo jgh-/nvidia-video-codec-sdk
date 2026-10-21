@@ -7,7 +7,7 @@
 
 use std::fmt::Debug;
 
-use super::{api::ENCODE_API, encoder::Encoder, result::EncodeError};
+use super::{api::api as encode_api, encoder::Encoder, result::EncodeError};
 use crate::{
     sys::nvEncodeAPI::{
         GUID,
@@ -197,7 +197,7 @@ impl Session {
             pictureType: params.picture_type,
             ..Default::default()
         };
-        unsafe { (ENCODE_API.encode_picture)(self.encoder.ptr, &mut encode_pic_params) }
+        unsafe { (encode_api()?.encode_picture)(self.encoder.ptr, &mut encode_pic_params) }
             .result(&self.encoder)
     }
 
@@ -215,7 +215,7 @@ impl Session {
     /// should retry after a few milliseconds.
     pub fn end_of_stream(&self) -> Result<(), EncodeError> {
         let mut encode_pic_params = NV_ENC_PIC_PARAMS::end_of_stream();
-        unsafe { (ENCODE_API.encode_picture)(self.encoder.ptr, &mut encode_pic_params) }
+        unsafe { (encode_api()?.encode_picture)(self.encoder.ptr, &mut encode_pic_params) }
             .result(&self.encoder)
     }
 }

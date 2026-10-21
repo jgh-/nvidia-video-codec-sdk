@@ -43,8 +43,18 @@ lazy_static! {
     ///
     /// You should not interact with this directly.
     /// [`Encoder`](crate::Encoder) exposes much of the functionality and provides a nicer API.
-    pub static ref ENCODE_API: EncodeAPI =
+    pub static ref ENCODE_API: Result<EncodeAPI, EncodeError> =
         EncodeAPI::new();
+}
+
+/// The encoder API, or the reason it could not be created.
+///
+/// Callers get a normal error instead of a panic when the driver is too old.
+pub fn api() -> Result<&'static EncodeAPI, EncodeError> {
+    match &*ENCODE_API {
+        Ok(api) => Ok(api),
+        Err(error) => Err(error.clone()),
+    }
 }
 
 // Function type aliases to shorten later definitions.
@@ -219,38 +229,77 @@ pub struct EncodeAPI {
     pub lookahead_picture: LookaheadPicture,
 }
 
-fn assert_versions_match(max_supported_version: u32) {
-    let major_version = max_supported_version >> 4;
-    let minor_version = max_supported_version & 0b1111;
-    assert!(
-        (major_version, minor_version) >= (NVENCAPI_MAJOR_VERSION, NVENCAPI_MINOR_VERSION),
-        "The maximum supported version should be greater or equal than the header version."
-    );
+/// Oldest driver-side NVENC API accepted when the headers are newer.
+///
+/// The bindings are generated from one SDK release, but drivers in the field
+/// trail it: a datacenter image can ship a driver several releases behind the
+/// headers. Refusing outright turned a version skew into a panic inside the
+/// encoder thread, which surfaced as "worker exited during initialization".
+/// Between this floor and the header version the API is negotiated down; below
+/// it the answer is a normal error, because the structures we send would be
+/// rejected in ways that are not worth guessing at.
+pub const MIN_SUPPORTED_MAJOR_VERSION: u32 = 12;
+
+static NEGOTIATED_VERSION: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+
+/// API version actually in use: the header version, or the driver's if older.
+pub fn negotiated_api_version() -> u32 {
+    *NEGOTIATED_VERSION.get_or_init(|| {
+        (NVENCAPI_MAJOR_VERSION << 4) | NVENCAPI_MINOR_VERSION
+    })
+}
+
+fn header_version() -> u32 {
+    (NVENCAPI_MAJOR_VERSION << 4) | NVENCAPI_MINOR_VERSION
+}
+
+/// Decide which API version to speak, given what the driver reports.
+fn negotiate_version(max_supported_version: u32) -> Result<u32, EncodeError> {
+    let header = header_version();
+    if max_supported_version >= header {
+        // Driver is at least as new as the headers: use the headers, which is
+        // what the struct versions in this crate were generated from.
+        return Ok(header);
+    }
+    let driver_major = max_supported_version >> 4;
+    if driver_major >= MIN_SUPPORTED_MAJOR_VERSION {
+        return Ok(max_supported_version);
+    }
+    Err(EncodeError {
+        kind: ErrorKind::UnsupportedDevice,
+        string: Some(format!(
+            "the installed driver supports NVENC API {}.{}, this crate needs at least {}.0              (headers: {}.{}); update the driver or build against older headers",
+            driver_major,
+            max_supported_version & 0b1111,
+            MIN_SUPPORTED_MAJOR_VERSION,
+            header >> 4,
+            header & 0b1111,
+        )),
+    })
 }
 
 impl EncodeAPI {
-    fn new() -> Self {
+    fn new() -> Result<Self, EncodeError> {
         const MSG: &str = "The API instance should populate the whole function list.";
 
         // Check that the driver max supported version matches the version
         // from the header files. If they do not match, the bindings should be updated.
         let mut version = 0;
-        unsafe { NvEncodeAPIGetMaxSupportedVersion(&mut version) }
-            .result_without_string()
-            .expect("The pointer to the version should be valid.");
-        assert_versions_match(version);
+        unsafe { NvEncodeAPIGetMaxSupportedVersion(&mut version) }.result_without_string()?;
+        let api_version = negotiate_version(version)?;
+        let _ = NEGOTIATED_VERSION.set(api_version);
 
-        // Create empty function buffer.
+        // Create empty function buffer, telling the driver which version we
+        // settled on rather than the one the headers were generated from.
         let mut function_list = NV_ENCODE_API_FUNCTION_LIST {
-            version: NV_ENCODE_API_FUNCTION_LIST_VER,
+            version: api_version | (std::mem::size_of::<NV_ENCODE_API_FUNCTION_LIST>() as u32) << 16
+                | (0x7 << 28),
             ..Default::default()
         };
         // Create Encode API Instance (populate function buffer).
-        unsafe { NvEncodeAPICreateInstance(&mut function_list) }
-            .result_without_string()
-            .expect("The pointer to the function list should be valid.");
+        unsafe { NvEncodeAPICreateInstance(&mut function_list) }.result_without_string()?;
 
-        Self {
+        Ok(Self {
             open_encode_session: function_list.nvEncOpenEncodeSession.expect(MSG),
             open_encode_session_ex: function_list.nvEncOpenEncodeSessionEx.expect(MSG),
             initialize_encoder: function_list.nvEncInitializeEncoder.expect(MSG),
@@ -293,6 +342,6 @@ impl EncodeAPI {
             set_io_cuda_streams: function_list.nvEncSetIOCudaStreams.expect(MSG),
             restore_encoder_state: function_list.nvEncRestoreEncoderState.expect(MSG),
             lookahead_picture: function_list.nvEncLookaheadPicture.expect(MSG),
-        }
+        })
     }
 }

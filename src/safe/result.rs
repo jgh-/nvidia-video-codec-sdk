@@ -4,7 +4,7 @@
 
 use std::{error::Error, ffi::CStr, fmt};
 
-use super::{api::ENCODE_API, encoder::Encoder};
+use super::{api::api as encode_api, encoder::Encoder};
 use crate::sys::nvEncodeAPI::NVENCSTATUS;
 
 /// Wrapper enum around [`NVENCSTATUS`].
@@ -221,7 +221,7 @@ impl NVENCSTATUS {
                 | ErrorKind::OutOfMemory => None,
                 // Otherwise allocate an owned `String` with the error.
                 _ => Some(
-                    unsafe { CStr::from_ptr((ENCODE_API.get_last_error_string)(encoder.ptr)) }
+                    unsafe { CStr::from_ptr((encode_api()?.get_last_error_string)(encoder.ptr)) }
                         .to_string_lossy()
                         .to_string(),
                 ),

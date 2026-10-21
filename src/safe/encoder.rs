@@ -8,7 +8,7 @@ use std::{ffi::c_void, ptr, sync::Arc};
 
 use cudarc::driver::CudaContext;
 
-use super::{api::ENCODE_API, result::EncodeError, session::Session};
+use super::{api::api as encode_api, result::EncodeError, session::Session};
 use crate::sys::nvEncodeAPI::{
     GUID,
     NVENCAPI_VERSION,
@@ -64,7 +64,7 @@ pub struct Encoder {
 /// If using events, they must also be unregistered.
 impl Drop for Encoder {
     fn drop(&mut self) {
-        unsafe { (ENCODE_API.destroy_encoder)(self.ptr) }
+        unsafe { (encode_api()?.destroy_encoder)(self.ptr) }
             .result(self)
             .expect("The encoder pointer should be valid.");
     }
@@ -101,11 +101,11 @@ impl Encoder {
         };
 
         if let err @ Err(_) =
-            unsafe { (ENCODE_API.open_encode_session_ex)(&mut session_params, &mut encoder) }
+            unsafe { (encode_api()?.open_encode_session_ex)(&mut session_params, &mut encoder) }
                 .result_without_string()
         {
             // We are required to destroy the encoder if there was an error.
-            unsafe { (ENCODE_API.destroy_encoder)(encoder) }.result_without_string()?;
+            unsafe { (encode_api()?.destroy_encoder)(encoder) }.result_without_string()?;
             err?;
         }
 
@@ -145,13 +145,13 @@ impl Encoder {
     pub fn get_encode_guids(&self) -> Result<Vec<GUID>, EncodeError> {
         // Query number of supported encoder codec GUIDs.
         let mut supported_count = 0;
-        unsafe { (ENCODE_API.get_encode_guid_count)(self.ptr, &mut supported_count) }
+        unsafe { (encode_api()?.get_encode_guid_count)(self.ptr, &mut supported_count) }
             .result(self)?;
         // Get the supported GUIDs.
         let mut encode_guids = vec![GUID::default(); supported_count as usize];
         let mut actual_count = 0;
         unsafe {
-            (ENCODE_API.get_encode_guids)(
+            (encode_api()?.get_encode_guids)(
                 self.ptr,
                 encode_guids.as_mut_ptr(),
                 supported_count,
@@ -198,13 +198,13 @@ impl Encoder {
     pub fn get_preset_guids(&self, encode_guid: GUID) -> Result<Vec<GUID>, EncodeError> {
         // Query the number of preset GUIDS.
         let mut preset_count = 0;
-        unsafe { (ENCODE_API.get_encode_preset_count)(self.ptr, encode_guid, &mut preset_count) }
+        unsafe { (encode_api()?.get_encode_preset_count)(self.ptr, encode_guid, &mut preset_count) }
             .result(self)?;
         // Get the preset GUIDs.
         let mut actual_count = 0;
         let mut preset_guids = vec![GUID::default(); preset_count as usize];
         unsafe {
-            (ENCODE_API.get_encode_preset_guids)(
+            (encode_api()?.get_encode_preset_guids)(
                 self.ptr,
                 encode_guid,
                 preset_guids.as_mut_ptr(),
@@ -253,14 +253,14 @@ impl Encoder {
         // Query the number of profile GUIDs.
         let mut profile_count = 0;
         unsafe {
-            (ENCODE_API.get_encode_profile_guid_count)(self.ptr, encode_guid, &mut profile_count)
+            (encode_api()?.get_encode_profile_guid_count)(self.ptr, encode_guid, &mut profile_count)
         }
         .result(self)?;
         // Get the profile GUIDs.
         let mut profile_guids = vec![GUID::default(); profile_count as usize];
         let mut actual_count = 0;
         unsafe {
-            (ENCODE_API.get_encode_profile_guids)(
+            (encode_api()?.get_encode_profile_guids)(
                 self.ptr,
                 encode_guid,
                 profile_guids.as_mut_ptr(),
@@ -313,14 +313,14 @@ impl Encoder {
     ) -> Result<Vec<NV_ENC_BUFFER_FORMAT>, EncodeError> {
         // Query the number of supported input formats.
         let mut format_count = 0;
-        unsafe { (ENCODE_API.get_input_format_count)(self.ptr, encode_guid, &mut format_count) }
+        unsafe { (encode_api()?.get_input_format_count)(self.ptr, encode_guid, &mut format_count) }
             .result(self)?;
         // Get the supported input formats.
         let mut supported_input_formats =
             vec![NV_ENC_BUFFER_FORMAT::NV_ENC_BUFFER_FORMAT_UNDEFINED; format_count as usize];
         let mut actual_count = 0;
         unsafe {
-            (ENCODE_API.get_input_formats)(
+            (encode_api()?.get_input_formats)(
                 self.ptr,
                 encode_guid,
                 supported_input_formats.as_mut_ptr(),
@@ -394,7 +394,7 @@ impl Encoder {
             ..Default::default()
         };
         unsafe {
-            (ENCODE_API.get_encode_preset_config_ex)(
+            (encode_api()?.get_encode_preset_config_ex)(
                 self.ptr,
                 encode_guid,
                 preset_guid,
@@ -453,7 +453,7 @@ impl Encoder {
         let initialize_params = &mut initialize_params.param;
         let width = initialize_params.encodeWidth;
         let height = initialize_params.encodeHeight;
-        unsafe { (ENCODE_API.initialize_encoder)(self.ptr, initialize_params) }.result(&self)?;
+        unsafe { (encode_api()?.initialize_encoder)(self.ptr, initialize_params) }.result(&self)?;
         Ok(Session {
             encoder: self,
             width,
