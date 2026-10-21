@@ -226,11 +226,11 @@ impl NVENCSTATUS {
                 | ErrorKind::NeedMoreInput
                 | ErrorKind::OutOfMemory => None,
                 // Otherwise allocate an owned `String` with the error.
-                _ => Some(
-                    unsafe { CStr::from_ptr((encode_api()?.get_last_error_string)(encoder.ptr)) }
+                _ => encode_api().ok().map(|api| {
+                    unsafe { CStr::from_ptr((api.get_last_error_string)(encoder.ptr)) }
                         .to_string_lossy()
-                        .to_string(),
-                ),
+                        .to_string()
+                }),
             }
             .filter(|s| !s.is_empty());
             err
