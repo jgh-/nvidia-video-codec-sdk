@@ -402,9 +402,10 @@ impl<'a> Buffer<'a> {
 
 impl Drop for Buffer<'_> {
     fn drop(&mut self) {
-        unsafe { (encode_api()?.destroy_input_buffer)(self.encoder.ptr, self.ptr) }
-            .result(self.encoder)
-            .expect("The encoder and buffer pointers should be valid.");
+        // No API means the resource was never created; nothing to release.
+        if let Ok(api) = encode_api() {
+            let _ = unsafe { (api.destroy_input_buffer)(self.encoder.ptr, self.ptr) };
+        }
     }
 }
 
@@ -463,9 +464,10 @@ impl BufferLock<'_, '_> {
 
 impl Drop for BufferLock<'_, '_> {
     fn drop(&mut self) {
-        unsafe { (encode_api()?.unlock_input_buffer)(self.buffer.encoder.ptr, self.buffer.ptr) }
-            .result(self.buffer.encoder)
-            .expect("The encoder and buffer pointers should be valid.");
+        // No API means the resource was never created; nothing to release.
+        if let Ok(api) = encode_api() {
+            let _ = unsafe { (api.unlock_input_buffer)(self.buffer.encoder.ptr, self.buffer.ptr) };
+        }
     }
 }
 
@@ -548,9 +550,10 @@ impl Bitstream<'_> {
 
 impl Drop for Bitstream<'_> {
     fn drop(&mut self) {
-        unsafe { (encode_api()?.destroy_bitstream_buffer)(self.encoder.ptr, self.ptr) }
-            .result(self.encoder)
-            .expect("The encoder and bitstream pointers should be valid.");
+        // No API means the resource was never created; nothing to release.
+        if let Ok(api) = encode_api() {
+            let _ = unsafe { (api.destroy_bitstream_buffer)(self.encoder.ptr, self.ptr) };
+        }
     }
 }
 
@@ -611,9 +614,10 @@ impl BitstreamLock<'_, '_> {
 
 impl Drop for BitstreamLock<'_, '_> {
     fn drop(&mut self) {
-        unsafe { (encode_api()?.unlock_bitstream)(self.bitstream.encoder.ptr, self.bitstream.ptr) }
-            .result(self.bitstream.encoder)
-            .expect("The encoder and bitstream pointers should be valid.");
+        // No API means the resource was never created; nothing to release.
+        if let Ok(api) = encode_api() {
+            let _ = unsafe { (api.unlock_bitstream)(self.bitstream.encoder.ptr, self.bitstream.ptr) };
+        }
     }
 }
 
@@ -641,14 +645,12 @@ unsafe impl Send for RegisteredResource<'_, MappedBuffer> {}
 /// when it goes out of scope.
 impl<T> Drop for RegisteredResource<'_, T> {
     fn drop(&mut self) {
-        // Unmapping resource.
-        unsafe { (encode_api()?.unmap_input_resource)(self.encoder.ptr, self.map_ptr) }
-            .result(self.encoder)
-            .expect("The encoder pointer and map handle should be valid.");
-        // Unregister resource.
-        unsafe { (encode_api()?.unregister_resource)(self.encoder.ptr, self.reg_ptr) }
-            .result(self.encoder)
-            .expect("The encoder pointer and resource handle should be valid.");
+        // No API means the resource was never registered; nothing to release.
+        let Ok(api) = encode_api() else { return };
+        let _ = unsafe { (api.unmap_input_resource)(self.encoder.ptr, self.map_ptr) }
+            .result(self.encoder);
+        let _ = unsafe { (api.unregister_resource)(self.encoder.ptr, self.reg_ptr) }
+            .result(self.encoder);
     }
 }
 
