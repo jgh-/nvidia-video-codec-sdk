@@ -230,29 +230,28 @@ pub struct EncodeAPI {
     pub lookahead_picture: LookaheadPicture,
 }
 
-/// Oldest driver-side NVENC API accepted when the headers are newer.
+/// The API version in use, in `NVENCAPI_VERSION` encoding
+/// (`major | minor << 24`).
 ///
-/// The bindings are generated from one SDK release, but drivers in the field
-/// trail it: a datacenter image can ship a driver several releases behind the
-/// headers. Refusing outright turned a version skew into a panic inside the
-/// encoder thread, which surfaced as "worker exited during initialization".
-/// Between this floor and the header version the API is negotiated down; below
-/// it the answer is a normal error, because the structures we send would be
-/// rejected in ways that are not worth guessing at.
-pub const MIN_SUPPORTED_MAJOR_VERSION: u32 = 12;
-
+/// The version is *checked*, never negotiated down. Every struct version in this
+/// crate (`NV_ENC_*_VER`) is derived from the header version, so speaking an
+/// older API while sending newer structures is incoherent: the driver accepts
+/// the version word and then rejects the session with `InvalidEncoderDevice`,
+/// which reads like a device problem and is not. Supporting an older driver
+/// means generating bindings from older headers, which is a build choice, not a
+/// runtime one.
 static NEGOTIATED_VERSION: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
 
-/// API version actually in use, in `NVENCAPI_VERSION` encoding
-/// (`major | minor << 24`).
+/// API version actually in use.
 pub fn negotiated_api_version() -> u32 {
-    *NEGOTIATED_VERSION.get_or_init(|| max_supported_to_version_word(header_version()))
+    *NEGOTIATED_VERSION.get_or_init(|| {
+        (NVENCAPI_MAJOR_VERSION << 4) | NVENCAPI_MINOR_VERSION
+    })
 }
 
 /// `NvEncodeAPIGetMaxSupportedVersion` reports `major << 4 | minor`, while
 /// `NVENCAPI_VERSION` (used by the function list and by
-/// `NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS`) uses `major | minor << 24`. Mixing
-/// the two encodings silently asks the driver for a version that does not exist.
+/// `NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS`) uses `major | minor << 24`.
 fn max_supported_to_version_word(max_supported: u32) -> u32 {
     (max_supported >> 4) | ((max_supported & 0b1111) << 24)
 }
@@ -261,25 +260,21 @@ fn header_version() -> u32 {
     (NVENCAPI_MAJOR_VERSION << 4) | NVENCAPI_MINOR_VERSION
 }
 
-/// Decide which API version to speak, given what the driver reports.
-fn negotiate_version(max_supported_version: u32) -> Result<u32, EncodeError> {
+/// Reject a driver that is older than the headers, with an error rather than a
+/// panic. A panic here aborts inside the encoder thread and reaches callers as
+/// "worker exited during initialization", which names nothing actionable.
+fn check_driver_version(max_supported_version: u32) -> Result<u32, EncodeError> {
     let header = header_version();
     if max_supported_version >= header {
-        // Driver is at least as new as the headers: use the headers, which is
-        // what the struct versions in this crate were generated from.
-        return Ok(header);
-    }
-    let driver_major = max_supported_version >> 4;
-    if driver_major >= MIN_SUPPORTED_MAJOR_VERSION {
-        return Ok(max_supported_version);
+        return Ok(max_supported_to_version_word(header));
     }
     Err(EncodeError::new(
         ErrorKind::UnsupportedDevice,
         Some(format!(
-            "the installed driver supports NVENC API {}.{}, this crate needs at least {}.0              (headers: {}.{}); update the driver or build against older headers",
-            driver_major,
+            "the installed driver supports NVENC API {}.{}, but this build was generated \
+             against {}.{}: update the driver, or rebuild the bindings against older headers",
+            max_supported_version >> 4,
             max_supported_version & 0b1111,
-            MIN_SUPPORTED_MAJOR_VERSION,
             header >> 4,
             header & 0b1111,
         )),
@@ -294,7 +289,7 @@ impl EncodeAPI {
         // from the header files. If they do not match, the bindings should be updated.
         let mut version = 0;
         unsafe { NvEncodeAPIGetMaxSupportedVersion(&mut version) }.result_without_string()?;
-        let api_version = max_supported_to_version_word(negotiate_version(version)?);
+        let api_version = check_driver_version(version)?;
         let _ = NEGOTIATED_VERSION.set(api_version);
 
         // Create empty function buffer, telling the driver which version we
