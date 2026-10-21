@@ -244,9 +244,7 @@ static NEGOTIATED_VERSION: std::sync::OnceLock<u32> = std::sync::OnceLock::new()
 
 /// API version actually in use.
 pub fn negotiated_api_version() -> u32 {
-    *NEGOTIATED_VERSION.get_or_init(|| {
-        (NVENCAPI_MAJOR_VERSION << 4) | NVENCAPI_MINOR_VERSION
-    })
+    *NEGOTIATED_VERSION.get_or_init(|| max_supported_to_version_word(header_version()))
 }
 
 /// `NvEncodeAPIGetMaxSupportedVersion` reports `major << 4 | minor`, while
