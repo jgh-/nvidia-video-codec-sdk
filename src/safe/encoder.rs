@@ -8,10 +8,9 @@ use std::{ffi::c_void, ptr, sync::Arc};
 
 use cudarc::driver::CudaContext;
 
-use super::{api::api as encode_api, result::EncodeError, session::Session};
+use super::{api::{api as encode_api, negotiated_api_version}, result::EncodeError, session::Session};
 use crate::sys::nvEncodeAPI::{
     GUID,
-    NVENCAPI_VERSION,
     NV_ENC_BUFFER_FORMAT,
     NV_ENC_CONFIG,
     NV_ENC_CONFIG_VER,
@@ -93,7 +92,7 @@ impl Encoder {
         let mut session_params = NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS {
             version: NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS_VER,
             deviceType: NV_ENC_DEVICE_TYPE::NV_ENC_DEVICE_TYPE_CUDA,
-            apiVersion: NVENCAPI_VERSION,
+            apiVersion: negotiated_api_version(),
             // Pass the CUDA Context as the device.
             // valid casting since CUcontext is a *mut
             device: cuda_ctx.cu_ctx().cast::<c_void>(),

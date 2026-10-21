@@ -2,6 +2,8 @@
 
 use core::ffi::{c_int, c_void};
 
+use super::result::{EncodeError, ErrorKind};
+
 use crate::sys::nvEncodeAPI::{
     NvEncodeAPICreateInstance,
     NvEncodeAPIGetMaxSupportedVersion,
@@ -10,7 +12,6 @@ use crate::sys::nvEncodeAPI::{
     NVENCAPI_MINOR_VERSION,
     NVENCSTATUS,
     NV_ENCODE_API_FUNCTION_LIST,
-    NV_ENCODE_API_FUNCTION_LIST_VER,
     NV_ENC_BUFFER_FORMAT,
     NV_ENC_CAPS_PARAM,
     NV_ENC_CREATE_BITSTREAM_BUFFER,
@@ -242,11 +243,18 @@ pub const MIN_SUPPORTED_MAJOR_VERSION: u32 = 12;
 
 static NEGOTIATED_VERSION: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
 
-/// API version actually in use: the header version, or the driver's if older.
+/// API version actually in use, in `NVENCAPI_VERSION` encoding
+/// (`major | minor << 24`).
 pub fn negotiated_api_version() -> u32 {
-    *NEGOTIATED_VERSION.get_or_init(|| {
-        (NVENCAPI_MAJOR_VERSION << 4) | NVENCAPI_MINOR_VERSION
-    })
+    *NEGOTIATED_VERSION.get_or_init(|| max_supported_to_version_word(header_version()))
+}
+
+/// `NvEncodeAPIGetMaxSupportedVersion` reports `major << 4 | minor`, while
+/// `NVENCAPI_VERSION` (used by the function list and by
+/// `NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS`) uses `major | minor << 24`. Mixing
+/// the two encodings silently asks the driver for a version that does not exist.
+fn max_supported_to_version_word(max_supported: u32) -> u32 {
+    (max_supported >> 4) | ((max_supported & 0b1111) << 24)
 }
 
 fn header_version() -> u32 {
@@ -265,9 +273,9 @@ fn negotiate_version(max_supported_version: u32) -> Result<u32, EncodeError> {
     if driver_major >= MIN_SUPPORTED_MAJOR_VERSION {
         return Ok(max_supported_version);
     }
-    Err(EncodeError {
-        kind: ErrorKind::UnsupportedDevice,
-        string: Some(format!(
+    Err(EncodeError::new(
+        ErrorKind::UnsupportedDevice,
+        Some(format!(
             "the installed driver supports NVENC API {}.{}, this crate needs at least {}.0              (headers: {}.{}); update the driver or build against older headers",
             driver_major,
             max_supported_version & 0b1111,
@@ -275,7 +283,7 @@ fn negotiate_version(max_supported_version: u32) -> Result<u32, EncodeError> {
             header >> 4,
             header & 0b1111,
         )),
-    })
+    ))
 }
 
 impl EncodeAPI {
@@ -286,7 +294,7 @@ impl EncodeAPI {
         // from the header files. If they do not match, the bindings should be updated.
         let mut version = 0;
         unsafe { NvEncodeAPIGetMaxSupportedVersion(&mut version) }.result_without_string()?;
-        let api_version = negotiate_version(version)?;
+        let api_version = max_supported_to_version_word(negotiate_version(version)?);
         let _ = NEGOTIATED_VERSION.set(api_version);
 
         // Create empty function buffer, telling the driver which version we

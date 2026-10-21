@@ -119,6 +119,12 @@ pub struct EncodeError {
 }
 
 impl EncodeError {
+    /// Build an error for a condition the driver did not report, such as a
+    /// driver too old to speak the API at all.
+    pub(crate) fn new(kind: ErrorKind, string: Option<String>) -> Self {
+        Self { kind, string }
+    }
+
     /// Getter for the error kind.
     #[must_use]
     pub fn kind(&self) -> ErrorKind {
