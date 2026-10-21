@@ -12,6 +12,7 @@ use crate::sys::nvEncodeAPI::{
     NVENCAPI_MINOR_VERSION,
     NVENCSTATUS,
     NV_ENCODE_API_FUNCTION_LIST,
+    NV_ENCODE_API_FUNCTION_LIST_VER,
     NV_ENC_BUFFER_FORMAT,
     NV_ENC_CAPS_PARAM,
     NV_ENC_CREATE_BITSTREAM_BUFFER,
@@ -287,14 +288,16 @@ impl EncodeAPI {
         // from the header files. If they do not match, the bindings should be updated.
         let mut version = 0;
         unsafe { NvEncodeAPIGetMaxSupportedVersion(&mut version) }.result_without_string()?;
-        let api_version = check_driver_version(version)?;
-        let _ = NEGOTIATED_VERSION.set(api_version);
+        // Check the driver before creating the instance, so a stale driver is a
+        // clear error rather than a rejected session later.
+        let _ = check_driver_version(version)?;
 
         // Create empty function buffer, telling the driver which version we
         // settled on rather than the one the headers were generated from.
         let mut function_list = NV_ENCODE_API_FUNCTION_LIST {
-            version: api_version | (std::mem::size_of::<NV_ENCODE_API_FUNCTION_LIST>() as u32) << 16
-                | (0x7 << 28),
+            // Struct version 2 of the function list, from the headers. The
+            // 16-bit field is the struct version, not its size.
+            version: NV_ENCODE_API_FUNCTION_LIST_VER,
             ..Default::default()
         };
         // Create Encode API Instance (populate function buffer).
