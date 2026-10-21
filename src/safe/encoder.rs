@@ -63,9 +63,11 @@ pub struct Encoder {
 /// If using events, they must also be unregistered.
 impl Drop for Encoder {
     fn drop(&mut self) {
-        unsafe { (encode_api()?.destroy_encoder)(self.ptr) }
-            .result(self)
-            .expect("The encoder pointer should be valid.");
+        // Dropping must not propagate: if the API could not be created there is
+        // no encoder to destroy, and a panic here would abort during unwinding.
+        if let Ok(api) = encode_api() {
+            let _ = unsafe { (api.destroy_encoder)(self.ptr) };
+        }
     }
 }
 
