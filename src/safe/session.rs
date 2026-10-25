@@ -220,13 +220,18 @@ impl Session {
     }
 }
 
-/// Send an EOS notifications on drop to flush the encoder.
+/// Tear the session down without emitting EOS.
+///
+/// EOS is not a teardown step: it asks the encoder to code the frames it is
+/// still holding (`bframes > 0`), and the driver writes those into the output
+/// buffers the caller registered. By the time this drop runs those buffers may
+/// already be freed — they are typically fields declared after the session in
+/// the owning struct — and the write faults inside the driver. Callers that
+/// want the tail frames must call [`Session::end_of_stream`] while their
+/// buffers are alive; destroying the encoder discards anything still buffered.
 impl Drop for Session {
     fn drop(&mut self) {
-        if !std::thread::panicking() {
-            self.end_of_stream()
-                .expect("The encoder should not be busy.");
-        }
+        // Intentionally empty: see above.
     }
 }
 
