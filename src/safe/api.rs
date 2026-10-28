@@ -278,6 +278,12 @@ fn check_driver_version(max_supported_version: u32) -> Result<u32, EncodeError> 
     ))
 }
 
+/// The bindings declare these as `extern "C"` functions rather than type
+/// aliases, so the pointer types are spelled out here.
+type GetVersionFn = unsafe extern "C" fn(*mut u32) -> NVENCSTATUS;
+type CreateInstanceFn =
+    unsafe extern "C" fn(*mut NV_ENCODE_API_FUNCTION_LIST) -> NVENCSTATUS;
+
 /// Load `libnvidia-encode` and resolve the two symbols that build the function
 /// table.
 ///
@@ -292,12 +298,6 @@ fn load_nvenc_entry_points() -> Result<(GetVersionFn, CreateInstanceFn), EncodeE
         "libnvidia-encode.so",
         "libnvidia-encode.so.1.0.0",
     ];
-    // The bindings declare these as `extern "C"` functions, not type aliases,
-    // so the pointer types are spelled out here.
-    type GetVersionFn = unsafe extern "C" fn(*mut u32) -> NVENCSTATUS;
-    type CreateInstanceFn =
-        unsafe extern "C" fn(*mut NV_ENCODE_API_FUNCTION_LIST) -> NVENCSTATUS;
-
     let mut last_error = None;
     for name in CANDIDATES {
         match unsafe { libloading::Library::new(name) } {
