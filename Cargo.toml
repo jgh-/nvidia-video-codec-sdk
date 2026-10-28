@@ -19,6 +19,10 @@ features = ["ci-check"]
 
 [dependencies]
 cudarc = { version = "0.19", features = ["cuda-version-from-build-system"] }
+# The driver library is loaded at runtime: linking it makes the built
+# artefact unloadable on any machine without an NVIDIA driver, which
+# takes the CPU codecs down with it.
+libloading = "0.8"
 lazy_static = "1.5.0"
 
 [dev-dependencies]

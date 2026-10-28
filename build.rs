@@ -62,8 +62,10 @@ fn main() {
     rerun_if_changed();
 
     // Link to libraries.
-    println!("cargo:rustc-link-lib={}", NVENC_LIB.0);
-    println!("cargo:rustc-link-lib={}", NVDEC_LIB.0);
+    // Deliberately not linked: the API is loaded with `libloading` at first
+    // use, so an artefact built with NVENC support still loads on a machine
+    // with no NVIDIA driver. Linking here is what made wheels unusable
+    // everywhere else.
 
     // Add the first found candidate location to link search.
     match library_candidates().next() {

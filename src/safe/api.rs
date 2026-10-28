@@ -280,14 +280,65 @@ fn check_driver_version(max_supported_version: u32) -> Result<u32, EncodeError> 
     ))
 }
 
+/// Load `libnvidia-encode` and resolve the two symbols that build the function
+/// table.
+///
+/// Runtime loading rather than linking is what keeps an artefact usable without
+/// a driver installed: the failure becomes "NVENC is unavailable here" instead
+/// of "this library cannot be loaded at all".
+fn load_nvenc_entry_points() -> Result<
+    (
+        NvEncodeAPIGetMaxSupportedVersion,
+        NvEncodeAPICreateInstance,
+    ),
+    EncodeError,
+> {
+    // Names the driver installs, newest first. `libnvidia-encode.so` is the
+    // development symlink and usually absent on a user machine.
+    const CANDIDATES: [&str; 3] = [
+        "libnvidia-encode.so.1",
+        "libnvidia-encode.so",
+        "libnvidia-encode.so.1.0.0",
+    ];
+    let mut last_error = None;
+    for name in CANDIDATES {
+        match unsafe { libloading::Library::new(name) } {
+            Ok(library) => {
+                let resolved = unsafe {
+                    let get_version: NvEncodeAPIGetMaxSupportedVersion =
+                        *library.get(b"NvEncodeAPIGetMaxSupportedVersion\0")?;
+                    let create_instance: NvEncodeAPICreateInstance =
+                        *library.get(b"NvEncodeAPICreateInstance\0")?;
+                    (get_version, create_instance)
+                };
+                // The function pointers are only valid while the library is
+                // loaded. This is a process-lifetime singleton, so leaking the
+                // handle is the correct lifetime, not an oversight.
+                core::mem::forget(library);
+                return Ok(resolved);
+            }
+            Err(error) => last_error = Some(error.to_string()),
+        }
+    }
+    Err(EncodeError::new(
+        ErrorKind::NoEncodeDevice,
+        Some(format!(
+            "NVENC unavailable: none of {CANDIDATES:?} could be loaded ({}). \
+             An NVIDIA driver is required for the NVENC backend; every other              backend works without one.",
+            last_error.unwrap_or_else(|| "no error reported".into())
+        )),
+    ))
+}
+
 impl EncodeAPI {
     fn new() -> Result<Self, EncodeError> {
         const MSG: &str = "The API instance should populate the whole function list.";
 
         // Check that the driver max supported version matches the version
         // from the header files. If they do not match, the bindings should be updated.
+        let (get_version, create_instance) = load_nvenc_entry_points()?;
         let mut version = 0;
-        unsafe { NvEncodeAPIGetMaxSupportedVersion(&mut version) }.result_without_string()?;
+        unsafe { get_version(&mut version) }.result_without_string()?;
         // Check the driver before creating the instance, so a stale driver is a
         // clear error rather than a rejected session later.
         let _ = check_driver_version(version)?;
@@ -301,7 +352,7 @@ impl EncodeAPI {
             ..Default::default()
         };
         // Create Encode API Instance (populate function buffer).
-        unsafe { NvEncodeAPICreateInstance(&mut function_list) }.result_without_string()?;
+        unsafe { create_instance(&mut function_list) }.result_without_string()?;
 
         Ok(Self {
             open_encode_session: function_list.nvEncOpenEncodeSession.expect(MSG),
