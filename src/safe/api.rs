@@ -302,11 +302,19 @@ fn load_nvenc_entry_points() -> Result<(GetVersionFn, CreateInstanceFn), EncodeE
     for name in CANDIDATES {
         match unsafe { libloading::Library::new(name) } {
             Ok(library) => {
+                let missing = |symbol: &str, error: libloading::Error| {
+                    EncodeError::new(
+                        ErrorKind::NoEncodeDevice,
+                        Some(format!("{symbol} missing from {name}: {error}")),
+                    )
+                };
                 let resolved = unsafe {
-                    let get_version: GetVersionFn =
-                        *library.get(b"NvEncodeAPIGetMaxSupportedVersion\0")?;
-                    let create_instance: CreateInstanceFn =
-                        *library.get(b"NvEncodeAPICreateInstance\0")?;
+                    let get_version: GetVersionFn = *library
+                        .get(b"NvEncodeAPIGetMaxSupportedVersion\0")
+                        .map_err(|e| missing("NvEncodeAPIGetMaxSupportedVersion", e))?;
+                    let create_instance: CreateInstanceFn = *library
+                        .get(b"NvEncodeAPICreateInstance\0")
+                        .map_err(|e| missing("NvEncodeAPICreateInstance", e))?;
                     (get_version, create_instance)
                 };
                 // The function pointers are only valid while the library is
