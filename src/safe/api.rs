@@ -5,8 +5,6 @@ use core::ffi::{c_int, c_void};
 use super::result::{EncodeError, ErrorKind};
 
 use crate::sys::nvEncodeAPI::{
-    NvEncodeAPICreateInstance,
-    NvEncodeAPIGetMaxSupportedVersion,
     GUID,
     NVENCAPI_MAJOR_VERSION,
     NVENCAPI_MINOR_VERSION,
@@ -286,13 +284,7 @@ fn check_driver_version(max_supported_version: u32) -> Result<u32, EncodeError> 
 /// Runtime loading rather than linking is what keeps an artefact usable without
 /// a driver installed: the failure becomes "NVENC is unavailable here" instead
 /// of "this library cannot be loaded at all".
-fn load_nvenc_entry_points() -> Result<
-    (
-        NvEncodeAPIGetMaxSupportedVersion,
-        NvEncodeAPICreateInstance,
-    ),
-    EncodeError,
-> {
+fn load_nvenc_entry_points() -> Result<(GetVersionFn, CreateInstanceFn), EncodeError> {
     // Names the driver installs, newest first. `libnvidia-encode.so` is the
     // development symlink and usually absent on a user machine.
     const CANDIDATES: [&str; 3] = [
@@ -300,14 +292,20 @@ fn load_nvenc_entry_points() -> Result<
         "libnvidia-encode.so",
         "libnvidia-encode.so.1.0.0",
     ];
+    // The bindings declare these as `extern "C"` functions, not type aliases,
+    // so the pointer types are spelled out here.
+    type GetVersionFn = unsafe extern "C" fn(*mut u32) -> NVENCSTATUS;
+    type CreateInstanceFn =
+        unsafe extern "C" fn(*mut NV_ENCODE_API_FUNCTION_LIST) -> NVENCSTATUS;
+
     let mut last_error = None;
     for name in CANDIDATES {
         match unsafe { libloading::Library::new(name) } {
             Ok(library) => {
                 let resolved = unsafe {
-                    let get_version: NvEncodeAPIGetMaxSupportedVersion =
+                    let get_version: GetVersionFn =
                         *library.get(b"NvEncodeAPIGetMaxSupportedVersion\0")?;
-                    let create_instance: NvEncodeAPICreateInstance =
+                    let create_instance: CreateInstanceFn =
                         *library.get(b"NvEncodeAPICreateInstance\0")?;
                     (get_version, create_instance)
                 };
