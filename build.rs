@@ -67,17 +67,10 @@ fn main() {
     // with no NVIDIA driver. Linking here is what made wheels unusable
     // everywhere else.
 
-    // Add the first found candidate location to link search.
-    match library_candidates().next() {
-        Some(path) => println!("cargo:rustc-link-search={}", path.display()),
-        None => panic!(
-            "Could not find NVIDIA Video Codec SDK libraries.\nPlace the libraries where you have \
-             your CUDA installation, or set `NVIDIA_VIDEO_CODEC_SDK_PATH` to the directory of \
-             your installation so that `$NVIDIA_VIDEO_CODEC_SDK_PATH/{}` and \
-             `$NVIDIA_VIDEO_CODEC_SDK_PATH/{}` are valid paths to the library files.",
-            NVENC_LIB.1, NVDEC_LIB.1
-        ),
-    }
+    // Nothing to locate: the API is loaded with `libloading` at first use, so
+    // neither the libraries nor the CUDA stubs are needed to build. Requiring
+    // them here is what made a wheel impossible to build on a machine without
+    // a driver.
 }
 
 /// Rerun the build script if any of the listed environment variables changes.
