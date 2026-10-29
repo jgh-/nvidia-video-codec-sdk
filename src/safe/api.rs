@@ -292,7 +292,12 @@ type CreateInstanceFn =
 /// of "this library cannot be loaded at all".
 fn load_nvenc_entry_points() -> Result<(GetVersionFn, CreateInstanceFn), EncodeError> {
     // Names the driver installs, newest first. `libnvidia-encode.so` is the
-    // development symlink and usually absent on a user machine.
+    // development symlink and usually absent on a user machine. Windows ships
+    // one DLL with no version suffix, so it is spelled out rather than derived:
+    // `libloading` wants the exact filename on every platform.
+    #[cfg(windows)]
+    const CANDIDATES: [&str; 2] = ["nvEncodeAPI64.dll", "nvEncodeAPI.dll"];
+    #[cfg(not(windows))]
     const CANDIDATES: [&str; 3] = [
         "libnvidia-encode.so.1",
         "libnvidia-encode.so",
