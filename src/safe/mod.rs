@@ -10,7 +10,7 @@ mod encoder;
 mod result;
 mod session;
 
-pub use api::{api, EncodeAPI, ENCODE_API};
+pub use api::{api, available, EncodeAPI, ENCODE_API};
 pub use buffer::{
     Bitstream,
     BitstreamLock,

@@ -57,6 +57,15 @@ pub fn api() -> Result<&'static EncodeAPI, EncodeError> {
     }
 }
 
+/// Load the NVENC API now, reporting why if it cannot be loaded.
+///
+/// Callers use this before starting work on another thread: a missing driver is
+/// an ordinary error at session open, and it is much better than a worker thread
+/// dying during initialisation with nothing to report but "the worker exited".
+pub fn available() -> Result<(), EncodeError> {
+    api().map(|_| ())
+}
+
 // Function type aliases to shorten later definitions.
 type OpenEncodeSession = unsafe extern "C" fn(*mut c_void, u32, *mut *mut c_void) -> NVENCSTATUS;
 type GetEncodeGUIDCount = unsafe extern "C" fn(*mut c_void, *mut u32) -> NVENCSTATUS;
